@@ -187,6 +187,8 @@ ENTITY ascal IS
 		------------------------------------
 		-- Low lag PLL tuning
 		o_lltune : OUT unsigned(15 DOWNTO 0);
+		o_fx_inter : OUT std_logic;
+		o_fx_field : OUT std_logic;
 
 		------------------------------------
 		-- Input video parameters
@@ -205,6 +207,7 @@ ENTITY ascal IS
 		freeze    : IN std_logic :='0'; -- 1=Disable framebuffer writes
 		mode      : IN unsigned(4 DOWNTO 0);
  		bob_deint : IN std_logic := '0';
+		fx_direct : IN std_logic := '0';
 		-- SYNC  |_________________________/"""""""""\_______|
 		-- DE    |""""""""""""""""""\________________________|
 		-- RGB   |    <#IMAGE#>      ^HDISP                  |
@@ -361,6 +364,7 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL i_iauto : std_logic;
 	SIGNAL i_mode : unsigned(4 DOWNTO 0);
 	SIGNAL i_format : unsigned(1 DOWNTO 0);
+	SIGNAL i_fxd : std_logic;
 	SIGNAL i_ven,i_sof : std_logic;
 	SIGNAL i_wr : std_logic;
 	SIGNAL i_divstart,i_divrun : std_logic;
@@ -447,6 +451,8 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL o_run : std_logic;
 	SIGNAL o_freeze : std_logic;
 	SIGNAL o_bob_deint : std_logic;
+	SIGNAL o_fxd : std_logic;
+	SIGNAL o_fxfield_reg : std_logic;
 	SIGNAL o_iwfl : std_logic_vector(2 DOWNTO 0);
 	SIGNAL o_mode,o_hmode,o_vmode : unsigned(4 DOWNTO 0);
 	SIGNAL o_format : unsigned(5 DOWNTO 0);
@@ -1236,7 +1242,12 @@ BEGIN
 				IF i_pde='1' AND i_sof='1' THEN
 					i_sof<='0';
 					i_vcpt<=0;
-					IF i_inter='1' AND i_flm='0' AND i_half='0' AND INTER THEN
+					IF i_inter='1' AND i_fxd='1' AND INTER THEN
+						i_line<='0';
+						i_wfl(o_ibuf0) <= i_pfl;
+						i_adrsi<=to_unsigned(N_BURST * to_integer(
+									 unsigned'("00") & to_std_logic(HEADER)),32);
+					ELSIF i_inter='1' AND i_flm='0' AND i_half='0' AND INTER THEN
 						i_line<='1';
 						i_wfl(o_ibuf1) <= '0';
 						i_adrsi<=to_unsigned(N_BURST * i_hburst,32) +
@@ -1254,8 +1265,13 @@ BEGIN
 														i_vcpt>=i_vmin AND i_vcpt<=i_vmax);
 
 				-- Detects end of frame for triple buffering.
-				i_endframe0<=i_vs AND (NOT i_inter OR i_flm OR i_bob_deint);
-				i_endframe1<=i_vs AND (NOT i_inter OR NOT i_flm OR i_bob_deint);
+				IF i_inter='1' AND i_fxd='1' THEN
+					i_endframe0<=i_vs;
+					i_endframe1<='0';
+				ELSE
+					i_endframe0<=i_vs AND (NOT i_inter OR i_flm OR i_bob_deint);
+					i_endframe1<=i_vs AND (NOT i_inter OR NOT i_flm OR i_bob_deint);
+				END IF;
 
 				i_vss<=to_std_logic(i_vcpt>=i_vmin AND i_vcpt<=i_vmax);
 
@@ -1304,6 +1320,7 @@ BEGIN
 				----------------------------------------------------
 				i_mode<=mode; -- <ASYNC>
 				i_format<=format; -- <ASYNC>
+				i_fxd<=fx_direct; -- <ASYNC>
 
 				-- Downscaling : Nearest or bilinear
 				i_bil<=to_std_logic(i_mode(2 DOWNTO 0)/="000" AND NOT DOWNSCALE_NN);
@@ -1319,7 +1336,7 @@ BEGIN
 					-- Non interlaced
 					i_vsize<=i_vmaxmin;
 					i_half <='0';
-				ELSIF i_ovsize<2*i_vmaxmin THEN
+				ELSIF i_ovsize<2*i_vmaxmin OR (i_fxd='1' AND INTER) THEN
 					-- Interlaced, but downscaling, use only half frames
 					i_vsize<=i_vmaxmin;
 					i_half <='1';
@@ -1913,6 +1930,7 @@ BEGIN
 			o_isync2 <= o_isync;
 			o_freeze <= freeze;
 			o_bob_deint <= bob_deint;
+			o_fxd <= fx_direct; -- <ASYNC>
 			o_iwfl <= i_wfl;
 			o_inter  <=i_inter; -- <ASYNC>
 			o_iendframe0<=i_endframe0; -- <ASYNC>
@@ -1930,10 +1948,28 @@ BEGIN
 				o_isync <= '1';
 			END IF;
 
+			-- Latch the FX-Direct field flag once per output frame: the live
+			-- buffer field latch is rewritten mid-frame by the input side, at
+			-- a mode dependent line phase, which must not reach the control
+			-- pixels on the first active lines
+			IF o_vsv(1)='1' AND o_vsv(0)='0' THEN
+				o_fxfield_reg<=o_iwfl(o_obuf0);
+			END IF;
+
 			-- Output : Change framebuffer, and image properties, at VS falling edge
 			IF o_vsv(1)='1' AND o_vsv(0)='0' AND o_bufup0='1' THEN
 				o_obuf0<=buf_next(o_obuf0,o_ibuf0,o_freeze);
 				o_bufup0<='0';
+				IF o_fxd='1' AND o_inter='1' THEN
+					o_ihsize<=i_hrsize; -- <ASYNC>
+					o_ivsize<=i_vrsize; -- <ASYNC>
+					o_hdown<=i_hdown; -- <ASYNC>
+					o_vdown<=i_vdown; -- <ASYNC>
+
+					IF (o_newres > 0) then
+						o_newres <= o_newres- 1;
+					END IF;
+				END IF;
 			END IF;
 			IF o_vsv(1)='1' AND o_vsv(0)='0' AND o_bufup1='1' THEN
 				o_obuf1<=buf_next(o_obuf1,o_ibuf1,o_freeze);
@@ -1957,6 +1993,16 @@ BEGIN
 				o_iendframe0='1' AND o_iendframe02='0' THEN
 				o_bufup0<='0';
 				o_obuf0<=o_ibuf0;
+				IF o_fxd='1' AND o_inter='1' THEN
+					o_ihsize<=i_hrsize; -- <ASYNC>
+					o_ivsize<=i_vrsize; -- <ASYNC>
+					o_hdown<=i_hdown; -- <ASYNC>
+					o_vdown<=i_vdown; -- <ASYNC>
+
+					IF (o_newres > 0) then
+						o_newres <= o_newres- 1;
+					END IF;
+				END IF;
 			END IF;
 			IF o_vsv(1)='1' AND o_vsv(0)='0' AND
 				o_iendframe1='1' AND o_iendframe12='0' THEN
@@ -2144,7 +2190,11 @@ BEGIN
 			END CASE;
 
 			o_read<=o_read_pre AND o_run;
-			o_rline<=o_vacpt(0); -- Even/Odd line for interlaced video
+			IF o_inter='1' AND o_fxd='1' THEN
+				o_rline<='0';
+			ELSE
+				o_rline<=o_vacpt(0); -- Even/Odd line for interlaced video
+			END IF;
 
 			----
 			-- When bob deinterlacing we read lines from one buffer (the most current) but we read them twice
@@ -2152,7 +2202,7 @@ BEGIN
 			-- To counteract the severe vibrating/motion with bob deinterlacing, we need to offset one field
 			-- by a half-line. This is done by only reading the first line of the 'even' frame once
 
-			IF o_inter='1' AND o_bob_deint='1' THEN
+			IF o_inter='1' AND o_bob_deint='1' AND o_fxd='0' THEN
 				IF o_iwfl(o_obuf0)='0' THEN
 					IF o_vacpt=0 OR o_rline='1' THEN
 						o_adrs_pre <= to_integer(o_vacpt) * to_integer(o_stride);
@@ -3028,6 +3078,8 @@ BEGIN
 						 6 => i_clk,
 						 7 => o_clk,
 						 OTHERS =>'0');
+	o_fx_inter <= o_inter AND o_fxd;
+	o_fx_field <= o_fxfield_reg;
 
 	----------------------------------------------------------------------------
 END ARCHITECTURE rtl;

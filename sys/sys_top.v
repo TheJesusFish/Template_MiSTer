@@ -325,6 +325,7 @@ reg        coef_wr = 0;
 wire[12:0] ARX, ARY;
 reg [11:0] VSET = 0, HSET = 0;
 reg        FREESCALE = 0;
+reg        FX_DIRECT = 0;
 reg  [2:0] scaler_flt;
 reg        lowlat = 0;
 reg        cfg_done = 0;
@@ -395,7 +396,11 @@ always@(posedge clk_sys) begin
 				areset <= 1;
 				io_dout_sys <= 'b11;
 			end
-			if(io_din[7:0] == 'h20) io_dout_sys <= 'b11;
+`ifndef MISTER_DEBUG_NOHDMI
+			if(io_din[7:0] == 'h20) io_dout_sys <= 'b111;
+`else
+			if(io_din[7:0] == 'h20) io_dout_sys <= 'b011;
+`endif
 `ifdef MISTER_DISABLE_ADAPTIVE
 			if(io_din[7:0] == 'h2B) io_dout_sys <= {fb_en, sl_r, 4'b0110};
 `else
@@ -470,7 +475,7 @@ always@(posedge clk_sys) begin
 				else coef_addr <= io_din[11:0];
 			end
 			if(cmd == 'h2B) scaler_flt <= io_din[2:0];
-			if(cmd == 'h37) {FREESCALE,HSET} <= {io_din[15],io_din[11:0]};
+			if(cmd == 'h37) {FREESCALE,FX_DIRECT,HSET} <= {io_din[15],io_din[14],io_din[11:0]};
 			if(cmd == 'h38) vs_line <= io_din[11:0];
 			if(cmd == 'h39) begin
 				case(cnt[3:0])
@@ -705,6 +710,7 @@ wire         vbuf_write;
 
 wire  [23:0] hdmi_data;
 wire         hdmi_vs, hdmi_hs, hdmi_de, hdmi_vbl, hdmi_brd;
+wire         ascal_fx_inter, ascal_fx_field;
 wire         freeze;
 wire         bob_deint;
 
@@ -772,6 +778,8 @@ wire         bob_deint;
 		.o_vbl    (hdmi_vbl),
 		.o_brd    (hdmi_brd),
 		.o_lltune (lltune),
+		.o_fx_inter(ascal_fx_inter),
+		.o_fx_field(ascal_fx_field),
 		.htotal   (WIDTH + HFP + HBP + HS[11:0]),
 		.hsstart  (WIDTH + HFP),
 		.hsend    (WIDTH + HFP + HS[11:0]),
@@ -789,6 +797,7 @@ wire         bob_deint;
 		.swblack  (hdmi_blackout),
 
 		.mode     ({~lowlat,LFB_EN ? LFB_FLT : |scaler_flt,2'b00}),
+		.fx_direct(FX_DIRECT),
 		.poly_clk (clk_sys),
 		.poly_a   (coef_addr),
 		.poly_dw  (coef_data),
@@ -828,6 +837,9 @@ wire         bob_deint;
 		.avl_read         (vbuf_read),
 		.avl_byteenable   (vbuf_byteenable)
 	);
+`else
+	assign ascal_fx_inter = 1'b0;
+	assign ascal_fx_field = 1'b0;
 `endif
 
 reg        LFB_EN     = 0;
@@ -1307,6 +1319,8 @@ always @(posedge hdmi_tx_clk) begin
 
 	reg hs,vs,de;
 	reg [23:0] d;
+	reg fx_de, fx_vs;
+	reg [12:0] fx_line;
 	
 	hdmi_dv_data <= dv_data;
 	hdmi_dv_hs   <= dv_hs;
@@ -1328,7 +1342,13 @@ always @(posedge hdmi_tx_clk) begin
 	hdmi_out_hs <= hs;
 	hdmi_out_vs <= vs;
 	hdmi_out_de <= de;
-	hdmi_out_d  <= d;
+
+	fx_vs <= vs;
+	fx_de <= de;
+	if(vs != fx_vs) fx_line <= 0;
+	else if(!de && fx_de && !(&fx_line)) fx_line <= fx_line + 1'd1;
+
+	hdmi_out_d  <= (FX_DIRECT && !direct_video && ascal_fx_inter && de && (fx_line < 5)) ? {8'h00, {8{ascal_fx_field}}, 8'hFF} : d;
 end
 
 assign HDMI_TX_HS = hdmi_out_hs;
