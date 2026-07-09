@@ -396,7 +396,11 @@ always@(posedge clk_sys) begin
 				areset <= 1;
 				io_dout_sys <= 'b11;
 			end
+`ifndef MISTER_DEBUG_NOHDMI
 			if(io_din[7:0] == 'h20) io_dout_sys <= 'b111;
+`else
+			if(io_din[7:0] == 'h20) io_dout_sys <= 'b011;
+`endif
 `ifdef MISTER_DISABLE_ADAPTIVE
 			if(io_din[7:0] == 'h2B) io_dout_sys <= {fb_en, sl_r, 4'b0110};
 `else
@@ -1316,7 +1320,6 @@ always @(posedge hdmi_tx_clk) begin
 	reg hs,vs,de;
 	reg [23:0] d;
 	reg fx_de, fx_vs;
-	reg fx_osd_status;
 	reg [12:0] fx_line;
 	
 	hdmi_dv_data <= dv_data;
@@ -1342,11 +1345,10 @@ always @(posedge hdmi_tx_clk) begin
 
 	fx_vs <= vs;
 	fx_de <= de;
-	fx_osd_status <= osd_status;
 	if(vs != fx_vs) fx_line <= 0;
 	else if(!de && fx_de && !(&fx_line)) fx_line <= fx_line + 1'd1;
 
-	hdmi_out_d  <= (FX_DIRECT && !direct_video && ascal_fx_inter && !fx_osd_status && de && (fx_line < 5)) ? {8'h00, {8{ascal_fx_field}}, 8'hFF} : d;
+	hdmi_out_d  <= (FX_DIRECT && !direct_video && ascal_fx_inter && de && (fx_line < 5)) ? {8'h00, {8{ascal_fx_field}}, 8'hFF} : d;
 end
 
 assign HDMI_TX_HS = hdmi_out_hs;

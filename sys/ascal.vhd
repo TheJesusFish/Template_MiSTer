@@ -452,6 +452,7 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL o_freeze : std_logic;
 	SIGNAL o_bob_deint : std_logic;
 	SIGNAL o_fxd : std_logic;
+	SIGNAL o_fxfield_reg : std_logic;
 	SIGNAL o_iwfl : std_logic_vector(2 DOWNTO 0);
 	SIGNAL o_mode,o_hmode,o_vmode : unsigned(4 DOWNTO 0);
 	SIGNAL o_format : unsigned(5 DOWNTO 0);
@@ -1947,11 +1948,19 @@ BEGIN
 				o_isync <= '1';
 			END IF;
 
+			-- Latch the FX-Direct field flag once per output frame: the live
+			-- buffer field latch is rewritten mid-frame by the input side, at
+			-- a mode dependent line phase, which must not reach the control
+			-- pixels on the first active lines
+			IF o_vsv(1)='1' AND o_vsv(0)='0' THEN
+				o_fxfield_reg<=o_iwfl(o_obuf0);
+			END IF;
+
 			-- Output : Change framebuffer, and image properties, at VS falling edge
 			IF o_vsv(1)='1' AND o_vsv(0)='0' AND o_bufup0='1' THEN
 				o_obuf0<=buf_next(o_obuf0,o_ibuf0,o_freeze);
 				o_bufup0<='0';
-				IF o_fxd='1' THEN
+				IF o_fxd='1' AND o_inter='1' THEN
 					o_ihsize<=i_hrsize; -- <ASYNC>
 					o_ivsize<=i_vrsize; -- <ASYNC>
 					o_hdown<=i_hdown; -- <ASYNC>
@@ -1984,7 +1993,7 @@ BEGIN
 				o_iendframe0='1' AND o_iendframe02='0' THEN
 				o_bufup0<='0';
 				o_obuf0<=o_ibuf0;
-				IF o_fxd='1' THEN
+				IF o_fxd='1' AND o_inter='1' THEN
 					o_ihsize<=i_hrsize; -- <ASYNC>
 					o_ivsize<=i_vrsize; -- <ASYNC>
 					o_hdown<=i_hdown; -- <ASYNC>
@@ -3070,7 +3079,7 @@ BEGIN
 						 7 => o_clk,
 						 OTHERS =>'0');
 	o_fx_inter <= o_inter AND o_fxd;
-	o_fx_field <= NOT o_iwfl(o_obuf0);
+	o_fx_field <= o_fxfield_reg;
 
 	----------------------------------------------------------------------------
 END ARCHITECTURE rtl;
