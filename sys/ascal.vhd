@@ -187,7 +187,6 @@ ENTITY ascal IS
 		------------------------------------
 		-- Low lag PLL tuning
 		o_lltune : OUT unsigned(15 DOWNTO 0);
-		o_fx_inter : OUT std_logic;
 		o_fx_field : OUT std_logic;
 
 		------------------------------------
@@ -1948,10 +1947,7 @@ BEGIN
 				o_isync <= '1';
 			END IF;
 
-			-- Latch the FX-Direct field flag once per output frame: the live
-			-- buffer field latch is rewritten mid-frame by the input side, at
-			-- a mode dependent line phase, which must not reach the control
-			-- pixels on the first active lines
+			-- Hold field identity for the whole output frame.
 			IF o_vsv(1)='1' AND o_vsv(0)='0' THEN
 				o_fxfield_reg<=o_iwfl(o_obuf0);
 			END IF;
@@ -3078,7 +3074,6 @@ BEGIN
 						 6 => i_clk,
 						 7 => o_clk,
 						 OTHERS =>'0');
-	o_fx_inter <= o_inter AND o_fxd;
 	o_fx_field <= o_fxfield_reg;
 
 	----------------------------------------------------------------------------
