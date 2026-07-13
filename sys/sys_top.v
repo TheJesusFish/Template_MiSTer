@@ -797,7 +797,7 @@ wire         bob_deint;
 		.vrrmax   (HEIGHT + VBP + VS[11:0] + 12'd1),
 		.swblack  (hdmi_blackout),
 
-		.mode     ({~lowlat,LFB_EN ? LFB_FLT : |scaler_flt,2'b00}),
+		.mode     ({~(lowlat | FX_DIRECT),LFB_EN ? LFB_FLT : |scaler_flt,2'b00}),
 		.fx_direct(FX_DIRECT),
 		.poly_clk (clk_sys),
 		.poly_a   (coef_addr),

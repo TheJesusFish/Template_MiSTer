@@ -1226,7 +1226,7 @@ BEGIN
 				ELSIF i_pvs='1' AND i_vs_pre='0' AND i_intercnt>0 THEN
 					i_intercnt<=i_intercnt-1;
 				END IF;
-				i_inter<=to_std_logic((i_intercnt>0) AND (i_fxd='0'));
+				i_inter<=to_std_logic(i_intercnt>0);
 
 				----------------------------------------------------
 				IF i_pvs='1' AND i_vs_pre='0' THEN
