@@ -450,7 +450,6 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL o_run : std_logic;
 	SIGNAL o_freeze : std_logic;
 	SIGNAL o_bob_deint : std_logic;
-	SIGNAL o_fxd : std_logic;
 	SIGNAL o_fxfield_reg : std_logic;
 	SIGNAL o_iwfl : std_logic_vector(2 DOWNTO 0);
 	SIGNAL o_mode,o_hmode,o_vmode : unsigned(4 DOWNTO 0);
@@ -1219,15 +1218,15 @@ BEGIN
 				i_fl_pre<=i_pfl;
 
 				----------------------------------------------------
-				-- Detect interlaced video
-				IF NOT INTER THEN
+				-- FXD treats fields as progressive frames.
+				IF NOT INTER OR i_fxd='1' THEN
 					i_intercnt<=0;
 				ELSIF i_pfl/=i_fl_pre THEN
 					i_intercnt<=3;
 				ELSIF i_pvs='1' AND i_vs_pre='0' AND i_intercnt>0 THEN
 					i_intercnt<=i_intercnt-1;
 				END IF;
-				i_inter<=to_std_logic(i_intercnt>0);
+				i_inter<=to_std_logic((i_intercnt>0) AND (i_fxd='0'));
 
 				----------------------------------------------------
 				IF i_pvs='1' AND i_vs_pre='0' THEN
@@ -1241,7 +1240,7 @@ BEGIN
 				IF i_pde='1' AND i_sof='1' THEN
 					i_sof<='0';
 					i_vcpt<=0;
-					IF i_inter='1' AND i_fxd='1' AND INTER THEN
+					IF i_fxd='1' THEN
 						i_line<='0';
 						i_wfl(o_ibuf0) <= i_pfl;
 						i_adrsi<=to_unsigned(N_BURST * to_integer(
@@ -1264,13 +1263,8 @@ BEGIN
 														i_vcpt>=i_vmin AND i_vcpt<=i_vmax);
 
 				-- Detects end of frame for triple buffering.
-				IF i_inter='1' AND i_fxd='1' THEN
-					i_endframe0<=i_vs;
-					i_endframe1<='0';
-				ELSE
-					i_endframe0<=i_vs AND (NOT i_inter OR i_flm OR i_bob_deint);
-					i_endframe1<=i_vs AND (NOT i_inter OR NOT i_flm OR i_bob_deint);
-				END IF;
+				i_endframe0<=i_vs AND (NOT i_inter OR i_flm OR i_bob_deint);
+				i_endframe1<=i_vs AND (NOT i_inter OR NOT i_flm OR i_bob_deint);
 
 				i_vss<=to_std_logic(i_vcpt>=i_vmin AND i_vcpt<=i_vmax);
 
@@ -1335,7 +1329,7 @@ BEGIN
 					-- Non interlaced
 					i_vsize<=i_vmaxmin;
 					i_half <='0';
-				ELSIF i_ovsize<2*i_vmaxmin OR (i_fxd='1' AND INTER) THEN
+				ELSIF i_ovsize<2*i_vmaxmin THEN
 					-- Interlaced, but downscaling, use only half frames
 					i_vsize<=i_vmaxmin;
 					i_half <='1';
@@ -1929,7 +1923,6 @@ BEGIN
 			o_isync2 <= o_isync;
 			o_freeze <= freeze;
 			o_bob_deint <= bob_deint;
-			o_fxd <= fx_direct; -- <ASYNC>
 			o_iwfl <= i_wfl;
 			o_inter  <=i_inter; -- <ASYNC>
 			o_iendframe0<=i_endframe0; -- <ASYNC>
@@ -1956,16 +1949,6 @@ BEGIN
 			IF o_vsv(1)='1' AND o_vsv(0)='0' AND o_bufup0='1' THEN
 				o_obuf0<=buf_next(o_obuf0,o_ibuf0,o_freeze);
 				o_bufup0<='0';
-				IF o_fxd='1' AND o_inter='1' THEN
-					o_ihsize<=i_hrsize; -- <ASYNC>
-					o_ivsize<=i_vrsize; -- <ASYNC>
-					o_hdown<=i_hdown; -- <ASYNC>
-					o_vdown<=i_vdown; -- <ASYNC>
-
-					IF (o_newres > 0) then
-						o_newres <= o_newres- 1;
-					END IF;
-				END IF;
 			END IF;
 			IF o_vsv(1)='1' AND o_vsv(0)='0' AND o_bufup1='1' THEN
 				o_obuf1<=buf_next(o_obuf1,o_ibuf1,o_freeze);
@@ -1989,16 +1972,6 @@ BEGIN
 				o_iendframe0='1' AND o_iendframe02='0' THEN
 				o_bufup0<='0';
 				o_obuf0<=o_ibuf0;
-				IF o_fxd='1' AND o_inter='1' THEN
-					o_ihsize<=i_hrsize; -- <ASYNC>
-					o_ivsize<=i_vrsize; -- <ASYNC>
-					o_hdown<=i_hdown; -- <ASYNC>
-					o_vdown<=i_vdown; -- <ASYNC>
-
-					IF (o_newres > 0) then
-						o_newres <= o_newres- 1;
-					END IF;
-				END IF;
 			END IF;
 			IF o_vsv(1)='1' AND o_vsv(0)='0' AND
 				o_iendframe1='1' AND o_iendframe12='0' THEN
@@ -2186,11 +2159,7 @@ BEGIN
 			END CASE;
 
 			o_read<=o_read_pre AND o_run;
-			IF o_inter='1' AND o_fxd='1' THEN
-				o_rline<='0';
-			ELSE
-				o_rline<=o_vacpt(0); -- Even/Odd line for interlaced video
-			END IF;
+			o_rline<=o_vacpt(0); -- Even/Odd line for interlaced video
 
 			----
 			-- When bob deinterlacing we read lines from one buffer (the most current) but we read them twice
@@ -2198,7 +2167,7 @@ BEGIN
 			-- To counteract the severe vibrating/motion with bob deinterlacing, we need to offset one field
 			-- by a half-line. This is done by only reading the first line of the 'even' frame once
 
-			IF o_inter='1' AND o_bob_deint='1' AND o_fxd='0' THEN
+			IF o_inter='1' AND o_bob_deint='1' THEN
 				IF o_iwfl(o_obuf0)='0' THEN
 					IF o_vacpt=0 OR o_rline='1' THEN
 						o_adrs_pre <= to_integer(o_vacpt) * to_integer(o_stride);
