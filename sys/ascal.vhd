@@ -1887,6 +1887,7 @@ BEGIN
 			o_readlev<=0;
 			o_copylev<=0;
 			o_hsp<='0';
+			o_fxfield_reg<='0';
 
 		ELSIF rising_edge(o_clk) THEN
 			------------------------------------------------------

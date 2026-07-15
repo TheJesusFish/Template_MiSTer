@@ -298,6 +298,7 @@ reg        cfg_set      = 0;
 
 wire       audio_96k    = cfg[6];
 wire       csync_en     = cfg[3];
+wire       fx_direct_mode = cfg[14];
 wire       io_osd_vga   = io_ss1 & ~io_ss2;
 `ifndef MISTER_DUAL_SDRAM
 	wire forced_scandoubler = cfg[4];
@@ -797,7 +798,7 @@ wire         bob_deint;
 		.vrrmax   (HEIGHT + VBP + VS[11:0] + 12'd1),
 		.swblack  (hdmi_blackout),
 
-		.mode     ({~(lowlat | FX_DIRECT),LFB_EN ? LFB_FLT : |scaler_flt,2'b00}),
+		.mode     ({~(lowlat | FX_INTERLACE),fx_direct_mode ? 1'b0 : (LFB_EN ? LFB_FLT : |scaler_flt),2'b00}),
 		.fx_direct(FX_DIRECT),
 		.poly_clk (clk_sys),
 		.poly_a   (coef_addr),
@@ -1410,7 +1411,7 @@ scanlines #(0) VGA_scanlines
 (
 	.clk(clk_vid),
 
-	.scanlines(scanlines),
+	.scanlines(fx_direct_mode ? 2'b00 : scanlines),
 	.din(de_emu ? {r_out, g_out, b_out} : 24'd0),
 	.hs_in(hs_fix),
 	.vs_in(vs_fix),
