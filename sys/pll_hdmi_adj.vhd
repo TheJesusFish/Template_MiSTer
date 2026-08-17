@@ -315,43 +315,53 @@ BEGIN
           
         ELSIF phm='0' AND cpt=0 THEN
           -- Frequency adjust
-          sign_v:=tune_freq(5);
-          IF col<10 THEN col<=col+1; END IF;
-          IF off_v>=16 AND col>=10 THEN
+          IF los='0' THEN
             phm<='1';
             col<=0;
           ELSE
-            off_v:=off_v+1;
-            IF off_v>17 THEN
-              off_v:=off_v + 3;
+            sign_v:=tune_freq(5);
+            IF col<10 THEN col<=col+1; END IF;
+            IF off_v>=16 AND col>=10 THEN
+              phm<='1';
+              col<=0;
+            ELSE
+              off_v:=off_v+1;
+              IF off_v>17 THEN
+                off_v:=off_v + 3;
+              END IF;
+              up_v:='1';
+              up<='1';
             END IF;
-            up_v:='1';
-            up<='1';
           END IF;
           
         ELSIF cpt=0 THEN
           -- Phase adjust
-          sign_v:=NOT tune_phase(5);
-          col<=col+1;
-          IF col>=10 THEN
+          IF lop='0' THEN
             phm<='0';
-            up_v:='1';
-            off_v:=31;
             col<=0;
           ELSE
-            off_v:=ofp_v + 1;
-            IF ofp_v>7 THEN
-              off_v:=off_v + 1;
+            sign_v:=NOT tune_phase(5);
+            col<=col+1;
+            IF col>=10 THEN
+              phm<='0';
+              up_v:='1';
+              off_v:=31;
+              col<=0;
+            ELSE
+              off_v:=ofp_v + 1;
+              IF ofp_v>7 THEN
+                off_v:=off_v + 1;
+              END IF;
+              IF ofp_v>14 THEN
+                off_v:=off_v + 2;
+              END IF;
+              IF ofp_v>17 THEN
+                off_v:=off_v + 3;
+              END IF;
+              up_v:='1';
             END IF;
-            IF ofp_v>14 THEN
-              off_v:=off_v + 2;
-            END IF;
-            IF ofp_v>17 THEN
-              off_v:=off_v + 3;
-            END IF;
-            up_v:='1';
+            up<='1';
           END IF;
-          up<='1';
         END IF;
       END IF;
       
@@ -430,4 +440,3 @@ BEGIN
   ----------------------------------------------------------------------------
   
 END ARCHITECTURE rtl;
-
