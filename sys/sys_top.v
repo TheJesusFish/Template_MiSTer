@@ -395,7 +395,7 @@ always@(posedge clk_sys) begin
 				areset <= 1;
 				io_dout_sys <= 'b11;
 			end
-			if(io_din[7:0] == 'h20) io_dout_sys <= 'b11;
+			if(io_din[7:0] == 'h20) io_dout_sys <= 'b1011;
 `ifdef MISTER_DISABLE_ADAPTIVE
 			if(io_din[7:0] == 'h2B) io_dout_sys <= {fb_en, sl_r, 4'b0110};
 `else
@@ -416,6 +416,7 @@ always@(posedge clk_sys) begin
 				cfg_set <= 1;
 				scaler_out <= 1;
 			end
+			if(cmd == 'h46 && cnt == 0) VRROFF <= io_din[11:0];
 			if(cmd == 'h20) begin
 				cfg_set <= 0;
 				if(cnt<8) begin
@@ -786,6 +787,7 @@ wire         bob_deint;
 		.vmax     (vmax),
 		.vrr      (vrr_mode),
 		.vrrmax   (HEIGHT + VBP + VS[11:0] + 12'd1),
+		.vrroff   (VRROFF),
 		.swblack  (hdmi_blackout),
 
 		.mode     ({~lowlat,LFB_EN ? LFB_FLT : |scaler_flt,2'b00}),
@@ -1001,7 +1003,7 @@ end
 		.clk(FPGA_CLK1_50),
 		.reset_na(~reset_req),
 
-		.llena(lowlat),
+		.llena(lowlat & ~vrr_mode),
 		.lltune({16{cfg_done}} & lltune),
 		.locked(led_locked),
 		.i_waitrequest(adj_waitrequest),
@@ -1059,6 +1061,7 @@ reg  [11:0] VFP     = 4;
 reg  [12:0] VS      = 5;
 reg  [11:0] VBP     = 36;
 reg         HDMI_PR = 0;
+reg  [11:0] VRROFF  = 0;
 
 wire [63:0] reconfig_to_pll;
 wire [63:0] reconfig_from_pll;

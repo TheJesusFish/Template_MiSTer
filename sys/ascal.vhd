@@ -223,6 +223,7 @@ ENTITY ascal IS
 		vmax    : IN natural RANGE 0 TO 4095; -- 0 <= vmin < vmax < vdisp
 		vrr     : IN std_logic := '0';
 		vrrmax  : IN natural RANGE 0 TO 4095 := 0;
+		vrroff  : IN natural RANGE 0 TO 4095 := 0; -- low latency VRR: output lines from first input line to output vsync
 		swblack : IN std_logic := '0';        -- will output 3 black frame on every resolution switch
 
 		-- Scaler format. 00=16bpp 565, 01=24bpp 10=32bpp
@@ -469,6 +470,10 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL o_vrr_max,o_vrr_max2 : boolean;
 	SIGNAL o_vcpt_sync,o_vcpt_sync2, o_vrrmax : uint12;
 	SIGNAL o_sync, o_sync_max : boolean;
+	SIGNAL o_vrroff,o_lldly,o_lldly2,o_llavg,o_llref : uint12;
+	SIGNAL o_llarm : uint13;
+	SIGNAL o_vrr_maxl : boolean;
+	SIGNAL o_ivss,o_ivss2 : std_logic;
 	SIGNAL o_vmin,o_vmax,o_vdisp : uint12;
 	SIGNAL o_divcpt : natural RANGE 0 TO 36;
 	SIGNAL o_iendframe0,o_iendframe02,o_iendframe1,o_iendframe12 : std_logic;
@@ -1910,6 +1915,7 @@ BEGIN
 
 			o_vrr    <=vrr;
 			o_vrrmax <= vrrmax;
+			o_vrroff <= vrroff;
 
 			--------------------------------------------
 			-- Triple buffering.
@@ -2784,6 +2790,9 @@ BEGIN
 					IF o_vcpt_sync /= 4095 THEN
 						o_vcpt_sync <= o_vcpt_sync+1;
 					END IF;
+					IF o_vrr='1' AND o_mode(3)='0' AND o_vcpt_sync+1=o_llarm THEN
+						o_sync<=true;
+					END IF;
 
 					IF o_vcpt_pre3+1>=o_vtotal THEN
 						o_vcpt_pre3<=0;
@@ -2832,8 +2841,9 @@ BEGIN
 
 			IF o_isync2='1' THEN
 				o_vcpt_sync<=0;
-				o_sync_max<=o_vrr_max2;
-				IF o_vrr_min2 THEN
+				o_sync_max<=o_vrr_max2 AND (o_mode(3)='1' OR o_vrr_maxl);
+				o_vrr_maxl<=o_vrr_max2;
+				IF o_vrr_min2 AND o_mode(3)='1' THEN
 					o_sync<=true;
 				END iF;
 			END IF;
@@ -2841,6 +2851,19 @@ BEGIN
 			o_vcpt2<=o_vcpt_pre3;
 			o_vrr_sync<=(o_vrr='1' AND (o_sync OR o_sync_max) AND o_vcpt2>=o_vdisp AND o_vcpt2<o_vsstart);
 			o_vrr_sync2<=o_vrr_sync;
+
+			-- Low latency VRR: lines from input vsync to first input line, averaged over two fields
+			o_ivss<=i_vss; -- <ASYNC>
+			o_ivss2<=o_ivss;
+			IF o_ivss='1' AND o_ivss2='0' THEN
+				o_lldly<=o_vcpt_sync;
+				o_lldly2<=o_lldly;
+			END IF;
+			o_llavg<=(o_lldly+o_lldly2)/2;
+			IF o_llavg>o_llref+1 OR o_llavg+1<o_llref THEN
+				o_llref<=o_llavg;
+			END IF;
+			o_llarm<=o_llref+o_vrroff;
 
 	 END IF;
 	END PROCESS OSWEEP;
