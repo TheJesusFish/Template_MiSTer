@@ -416,7 +416,10 @@ always@(posedge clk_sys) begin
 				cfg_set <= 1;
 				scaler_out <= 1;
 			end
-			if(cmd == 'h46 && cnt == 0) VRROFF <= io_din[11:0];
+			if(cmd == 'h47) begin
+				if(cnt == 0) VRROFF <= io_din[11:0];
+				if(cnt == 1) VRRMIN <= io_din[11:0];
+			end
 			if(cmd == 'h20) begin
 				cfg_set <= 0;
 				if(cnt<8) begin
@@ -788,6 +791,7 @@ wire         bob_deint;
 		.vrr      (vrr_mode),
 		.vrrmax   (HEIGHT + VBP + VS[11:0] + 12'd1),
 		.vrroff   (VRROFF),
+		.llmin    (VRRMIN),
 		.swblack  (hdmi_blackout),
 
 		.mode     ({~lowlat,LFB_EN ? LFB_FLT : |scaler_flt,2'b00}),
@@ -1062,6 +1066,7 @@ reg  [12:0] VS      = 5;
 reg  [11:0] VBP     = 36;
 reg         HDMI_PR = 0;
 reg  [11:0] VRROFF  = 0;
+reg  [11:0] VRRMIN  = 0;
 
 wire [63:0] reconfig_to_pll;
 wire [63:0] reconfig_from_pll;

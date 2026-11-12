@@ -224,6 +224,7 @@ ENTITY ascal IS
 		vrr     : IN std_logic := '0';
 		vrrmax  : IN natural RANGE 0 TO 4095 := 0;
 		vrroff  : IN natural RANGE 0 TO 4095 := 0; -- low latency VRR: output lines from first input line to output vsync
+		llmin   : IN natural RANGE 0 TO 4095 := 0; -- low latency VRR: first output line accepting a sync
 		swblack : IN std_logic := '0';        -- will output 3 black frame on every resolution switch
 
 		-- Scaler format. 00=16bpp 565, 01=24bpp 10=32bpp
@@ -470,9 +471,9 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL o_vrr_max,o_vrr_max2 : boolean;
 	SIGNAL o_vcpt_sync,o_vcpt_sync2, o_vrrmax : uint12;
 	SIGNAL o_sync, o_sync_max : boolean;
-	SIGNAL o_vrroff,o_lldly,o_lldly2,o_llavg,o_llref : uint12;
+	SIGNAL o_vrroff,o_llmin,o_lldly,o_lldly2,o_llavg,o_llref : uint12;
 	SIGNAL o_llarm : uint13;
-	SIGNAL o_vrr_maxl : boolean;
+	SIGNAL o_vrr_maxl,o_llok,o_llnear,o_llpend : boolean;
 	SIGNAL o_ivss,o_ivss2 : std_logic;
 	SIGNAL o_vmin,o_vmax,o_vdisp : uint12;
 	SIGNAL o_divcpt : natural RANGE 0 TO 36;
@@ -1916,6 +1917,7 @@ BEGIN
 			o_vrr    <=vrr;
 			o_vrrmax <= vrrmax;
 			o_vrroff <= vrroff;
+			o_llmin  <= llmin;
 
 			--------------------------------------------
 			-- Triple buffering.
@@ -2790,8 +2792,17 @@ BEGIN
 					IF o_vcpt_sync /= 4095 THEN
 						o_vcpt_sync <= o_vcpt_sync+1;
 					END IF;
-					IF o_vrr='1' AND o_mode(3)='0' AND o_vcpt_sync+1=o_llarm THEN
-						o_sync<=true;
+					IF o_vrr='1' AND o_mode(3)='0' THEN
+						IF o_vcpt_sync+1=o_llarm THEN
+							IF o_llok THEN
+								o_sync<=true;
+							ELSIF o_llnear THEN
+								o_llpend<=true;
+							END IF;
+						END IF;
+						IF o_llpend AND o_llok THEN
+							o_sync<=true;
+						END IF;
 					END IF;
 
 					IF o_vcpt_pre3+1>=o_vtotal THEN
@@ -2799,6 +2810,7 @@ BEGIN
 					ELSIF o_vrr_sync2 THEN
 						o_vcpt_pre3<=o_vsstart;
 						o_sync<=false;
+						o_llpend<=false;
 					ELSE
 						o_vcpt_pre3<=(o_vcpt_pre3+1) MOD 4096;
 					END IF;
@@ -2864,6 +2876,9 @@ BEGIN
 				o_llref<=o_llavg;
 			END IF;
 			o_llarm<=o_llref+o_vrroff;
+			-- Low latency VRR: sync accepted from llmin, deferred when up to 32 lines early
+			o_llok<=(o_vcpt_pre3>=o_llmin AND o_vcpt_pre3<o_vsstart);
+			o_llnear<=(o_vcpt_pre3<o_llmin AND o_vcpt_pre3+32>=o_llmin);
 
 	 END IF;
 	END PROCESS OSWEEP;
